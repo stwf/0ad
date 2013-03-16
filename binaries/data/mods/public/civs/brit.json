@@ -6,7 +6,8 @@
 	"History": "The Britons were the Celtic tribes of the British Isles. Using chariots, longswordsmen and powerful melee soldiers, they staged fearesome revolts against Rome to protect their customs and interests. Also, they built thousands of unique structures such as hill forts, crannogs and brochs.",
 	"Music":[
 			{"File":"Highland_Mist.ogg", "Type":"peace"},
-			{"File":"Celtic_Pride.ogg", "Type":"peace"}
+			{"File":"Celtic_Pride.ogg", "Type":"peace"},
+			{"File":"Celtica.ogg", "Type":"peace"}
 		],
 	"Factions":
 	[
@@ -96,10 +97,11 @@
 		},
 		{
 			"Template": "units/brit_infantry_spearman_b",
-			"Count": 4 
-		},
+			"Count": 2 
+		},		
 		{
-			"Template": "units/brit_cavalry_javelinist_b" 
+			"Template": "units/brit_infantry_slinger_b",
+			"Count": 2 
 		},
 		{
 			"Template": "units/brit_war_dog_b" 

@@ -72,7 +72,7 @@ public:
 	entity_pos_t m_YOffset;
 	bool m_RelativeToGround; // whether m_YOffset is relative to terrain/water plane, or an absolute height
 
-	entity_angle_t m_RotX, m_RotY, m_RotZ;
+	entity_angle_t m_RotX, m_RotY, m_LastRotY, m_PrevRotY, m_RotZ;
 	float m_InterpolatedRotY; // not serialized
 
 	static std::string GetSchema()
@@ -121,8 +121,11 @@ public:
 
 		m_RotYSpeed = paramNode.GetChild("TurnRate").ToFixed().ToFloat();
 
-		m_RotX = m_RotY = m_RotZ = entity_angle_t::FromInt(0);
+		m_RotX = m_RotY = m_RotZ = m_PrevRotY = m_LastRotY = entity_angle_t::FromInt(0);
 		m_InterpolatedRotY = 0;
+
+		m_PositionChanged = false;
+		m_Interpolated = false;
 	}
 
 	virtual void Deinit()
@@ -327,6 +330,8 @@ public:
 	virtual void SetYRotation(entity_angle_t y)
 	{
 		m_RotY = y;
+		m_PrevRotY = y;
+		m_LastRotY = y;
 		m_InterpolatedRotY = m_RotY.ToFloat();
 
 		AdvertisePositionChanges();
@@ -402,25 +407,13 @@ public:
 
 		// TODO: do something with m_AnchorType
 
-		CMatrix3D m;
-		CMatrix3D mXZ;
-		float Cos = cosf(rotY);
-		float Sin = sinf(rotY);
-
-		m.SetIdentity();
-		m._11 = -Cos;
-		m._13 = -Sin;
-		m._31 = Sin;
-		m._33 = -Cos;
-
-		mXZ.SetIdentity();
-		mXZ.SetXRotation(m_RotX.ToFloat());
-		mXZ.RotateZ(m_RotZ.ToFloat());
-		// TODO: is this all done in the correct order?
-		mXZ = m * mXZ;
-		mXZ.Translate(CVector3D(x, y, z));
-
-		return mXZ;
+        CMatrix3D m;
+		m.SetXRotation(m_RotX.ToFloat());
+		m.RotateZ(m_RotZ.ToFloat());
+		m.RotateY(rotY + (float)M_PI);
+		m.Translate(CVector3D(x, y, z));
+		
+		return m;
 	}
 
 	virtual void HandleMessage(const CMessage& msg, bool UNUSED(global))
@@ -429,6 +422,10 @@ public:
 		{
 		case MT_Interpolate:
 		{
+			m_Interpolated = true;
+			if (!m_PositionChanged)
+				return;
+			
 			const CMessageInterpolate& msgData = static_cast<const CMessageInterpolate&> (msg);
 
 			float rotY = m_RotY.ToFloat();
@@ -450,13 +447,23 @@ public:
 			// Store the positions from the turn before
 			m_PrevX = m_LastX;
 			m_PrevZ = m_LastZ;
-			
+			m_PrevRotY = m_LastRotY;
+
 			m_LastX = m_X;
 			m_LastZ = m_Z;
+			m_LastRotY = m_RotY;
+
+			m_PositionChanged = m_X != m_PrevX || m_Z != m_PrevZ || m_RotY != m_PrevRotY || !m_Interpolated;
+			m_Interpolated = false;
 
 			break;
 		}
 		}
+	}
+
+	virtual bool GetReinterpolate()
+	{
+		return m_PositionChanged;
 	}
 
 private:
@@ -472,7 +479,11 @@ private:
 			CMessagePositionChanged msg(GetEntityId(), false, entity_pos_t::Zero(), entity_pos_t::Zero(), entity_angle_t::Zero());
 			GetSimContext().GetComponentManager().PostMessage(GetEntityId(), msg);
 		}
+		m_PositionChanged = true;
 	}
+
+	bool m_PositionChanged;
+	bool m_Interpolated;
 };
 
 REGISTER_COMPONENT_TYPE(Position)

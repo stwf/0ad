@@ -1,13 +1,15 @@
 /*
- * Military strategy:
- *   * Try training an attack squad of a specified size
- *   * When it's the appropriate size, send it to attack the enemy
- *   * Repeat forever
- *
+ * Military Manager. NOT cleaned up from qBot, many of the functions here are deprecated for functions in attack_plan.js
  */
 
 var MilitaryAttackManager = function() {
+	
+	this.fortressStartTime = 0;
+	this.fortressLapseTime = Config.Military.fortressLapseTime * 1000;
+	this.defenceBuildingTime = Config.Military.defenceBuildingTime * 1000;
+	this.attackPlansStartTime = Config.Military.attackPlansStartTime * 1000;
 	this.defenceManager = new Defence();
+	
 	
 	this.TotalAttackNumber = 0;
 	this.upcomingAttacks = { "CityAttack" : [] };
@@ -62,9 +64,10 @@ MilitaryAttackManager.prototype.init = function(gameState) {
 	this.enemyWatchers = {};
 	this.ennWatcherIndex = [];
 	for (var i = 1; i <= 8; i++)
-		if (gameState.player != i && gameState.isPlayerEnemy(i)) {
+		if (PlayerID != i && gameState.isPlayerEnemy(i)) {
 			this.enemyWatchers[i] = new enemyWatcher(gameState, i);
 			this.ennWatcherIndex.push(i);
+			this.defenceManager.enemyArmy[i] = [];
 		}
 
 };
@@ -144,31 +147,42 @@ MilitaryAttackManager.prototype.findBestTrainableUnit = function(gameState, clas
 	
 	
 	units.sort(function(a, b) { //}) {
-			   var aDivParam = 0, bDivParam = 0;
-			   var aTopParam = 0, bTopParam = 0;
-			   for (i in parameters) {
-			   var param = parameters[i];
-			   
-			   if (param[0] == "base") {
-			   aTopParam = param[1];
-			   bTopParam = param[1];
-			   }
-			   if (param[0] == "strength") {
-			   aTopParam += a[1].getMaxStrength() * param[1];
-			   bTopParam += b[1].getMaxStrength() * param[1];
-			   }
-			   if (param[0] == "speed") {
-			   aTopParam += a[1].walkSpeed() * param[1];
-			   bTopParam += b[1].walkSpeed() * param[1];
-			   }
-			   
-			   if (param[0] == "cost") {
-			   aDivParam += a[1].costSum() * param[1];
-			   bDivParam += b[1].costSum() * param[1];
-			   }
-			   }
-			   return -(aTopParam/(aDivParam+1)) + (bTopParam/(bDivParam+1));
-			   });
+		var aDivParam = 0, bDivParam = 0;
+		var aTopParam = 0, bTopParam = 0;
+		for (i in parameters) {
+			var param = parameters[i];
+			
+			if (param[0] == "base") {
+				aTopParam = param[1];
+				bTopParam = param[1];
+			}
+			if (param[0] == "strength") {
+				aTopParam += getMaxStrength(a[1]) * param[1];
+				bTopParam += getMaxStrength(b[1]) * param[1];
+			}
+			if (param[0] == "siegeStrength") {
+				aTopParam += getMaxStrength(a[1], "Structure") * param[1];
+				bTopParam += getMaxStrength(b[1], "Structure") * param[1];
+			}
+			if (param[0] == "speed") {
+				aTopParam += a[1].walkSpeed() * param[1];
+				bTopParam += b[1].walkSpeed() * param[1];
+			}
+			
+			if (param[0] == "cost") {
+				aDivParam += a[1].costSum() * param[1];
+				bDivParam += b[1].costSum() * param[1];
+			}
+			if (param[0] == "canGather") {
+				// checking against wood, could be anything else really.
+				if (a[1].resourceGatherRates() && a[1].resourceGatherRates()["wood.tree"])
+					aTopParam *= param[1];
+				if (b[1].resourceGatherRates() && b[1].resourceGatherRates()["wood.tree"])
+					bTopParam *= param[1];
+			}
+		}
+		return -(aTopParam/(aDivParam+1)) + (bTopParam/(bDivParam+1));
+	});
 	return units[0][0];
 };
 
@@ -179,8 +193,8 @@ MilitaryAttackManager.prototype.registerSoldiers = function(gameState) {
 	var self = this;
 
 	soldiers.forEach(function(ent) {
-		ent.setMetadata("role", "military");
-		ent.setMetadata("military", "unassigned");
+		ent.setMetadata(PlayerID, "role", "military");
+		ent.setMetadata(PlayerID, "military", "unassigned");
 	});
 };
 
@@ -207,8 +221,8 @@ MilitaryAttackManager.prototype.getAvailableUnits = function(n, filter) {
 	
 	units.forEach(function(ent){
 		ret.push(ent.id());
-		ent.setMetadata("military", "assigned");
-		ent.setMetadata("role", "military");
+		ent.setMetadata(PlayerID, "military", "assigned");
+		ent.setMetadata(PlayerID, "role", "military");
 		count++;
 		if (count >= n) {
 			return;
@@ -219,7 +233,7 @@ MilitaryAttackManager.prototype.getAvailableUnits = function(n, filter) {
 
 // Takes a single unit id, and marks it unassigned
 MilitaryAttackManager.prototype.unassignUnit = function(unit){
-	this.entity(unit).setMetadata("military", "unassigned");
+	this.entity(unit).setMetadata(PlayerID, "military", "unassigned");
 };
 
 // Takes an array of unit id's and marks all of them unassigned 
@@ -367,16 +381,21 @@ MilitaryAttackManager.prototype.measureEnemyStrength = function(gameState){
 
 // Adds towers to the defenceBuilding queue
 MilitaryAttackManager.prototype.buildDefences = function(gameState, queues){ 
+
+	var workersNumber = gameState.getOwnEntitiesByRole("worker").filter(Filters.not(Filters.byHasMetadata(PlayerID,"plan"))).length;
+
 	if (gameState.countEntitiesAndQueuedByType(gameState.applyCiv('structures/{civ}_defense_tower'))
-			+ queues.defenceBuilding.totalLength() < gameState.getEntityLimits()["DefenseTower"]) {
-		
+		+ queues.defenceBuilding.totalLength() < gameState.getEntityLimits()["DefenseTower"] && queues.defenceBuilding.totalLength() < 4
+		&& gameState.currentPhase() > 1 && queues.defenceBuilding.totalLength() < 3) {
 		gameState.getOwnEntities().forEach(function(dropsiteEnt) {
-			if (dropsiteEnt.resourceDropsiteTypes() && dropsiteEnt.getMetadata("defenseTower") !== true){
+			if (dropsiteEnt.resourceDropsiteTypes() && dropsiteEnt.getMetadata(PlayerID, "defenseTower") !== true
+				&& (dropsiteEnt.getMetadata(PlayerID, "resource-quantity-wood") > 400 || dropsiteEnt.getMetadata(PlayerID, "resource-quantity-stone") > 500
+					|| dropsiteEnt.getMetadata(PlayerID, "resource-quantity-metal") > 500) ){
 				var position = dropsiteEnt.position();
 				if (position){
 					queues.defenceBuilding.addItem(new BuildingConstructionPlan(gameState, 'structures/{civ}_defense_tower', position));
 				}
-				dropsiteEnt.setMetadata("defenseTower", true);
+				dropsiteEnt.setMetadata(PlayerID, "defenseTower", true);
 			}
 		});
 	}
@@ -386,14 +405,29 @@ MilitaryAttackManager.prototype.buildDefences = function(gameState, queues){
 		numFortresses += gameState.countEntitiesAndQueuedByType(gameState.applyCiv(this.bFort[i]));
 	}
 	
-	if (numFortresses + queues.defenceBuilding.totalLength() < 1){ //gameState.getEntityLimits()["Fortress"]) {
-		if (gameState.getTimeElapsed() > 840 * 1000 + numFortresses * 300 * 1000){
-			if (gameState.ai.pathsToMe && gameState.ai.pathsToMe.length > 0){
-				var position = gameState.ai.pathsToMe.shift();
-				// TODO: pick a fort randomly from the list.
-				queues.defenceBuilding.addItem(new BuildingConstructionPlan(gameState, this.bFort[0], position));
-			}else{
-				queues.defenceBuilding.addItem(new BuildingConstructionPlan(gameState, this.bFort[0]));
+	if (queues.defenceBuilding.totalLength() < 1 && (gameState.currentPhase() > 2 || gameState.isResearching("phase_city_generic")))
+	{
+		if (workersNumber >= 80 && gameState.getTimeElapsed() > numFortresses * this.fortressLapseTime + this.fortressStartTime)
+		{
+			if (!this.fortressStartTime)
+				this.fortressStartTime = gameState.getTimeElapsed();
+			queues.defenceBuilding.addItem(new BuildingConstructionPlan(gameState, this.bFort[0]));
+			debug ("Building a fortress");
+		}
+	}
+	if (gameState.countEntitiesByType(gameState.applyCiv(this.bFort[i])) >= 1) {
+		// let's add a siege building plan to the current attack plan if there is none currently.
+		if (this.upcomingAttacks["CityAttack"].length !== 0)
+		{
+			var attack = this.upcomingAttacks["CityAttack"][0];
+			if (!attack.unitStat["Siege"])
+			{
+				// no minsize as we don't want the plan to fail at the last minute though.
+				var stat = { "priority" : 1.1, "minSize" : 0, "targetSize" : 4, "batchSize" : 2, "classes" : ["Siege"],
+					"interests" : [ ["siegeStrength", 3], ["cost",1] ]  ,"templates" : [] };
+				if (gameState.civ() == "cart" || gameState.civ() == "maur")
+					stat["classes"] = ["Elephant"];
+				attack.addBuildOrder(gameState, "Siege", stat, true);
 			}
 		}
 	}
@@ -403,19 +437,37 @@ MilitaryAttackManager.prototype.constructTrainingBuildings = function(gameState,
 	// Build more military buildings
 	// TODO: make military building better
 	Engine.ProfileStart("Build buildings");
-	if (gameState.countEntitiesByType(gameState.applyCiv("units/{civ}_support_female_citizen")) > 25) {
-		if (gameState.countEntitiesAndQueuedByType(gameState.applyCiv(this.bModerate[0]))
-				+ queues.militaryBuilding.totalLength() < 1) {
+	
+	
+	var workersNumber = gameState.getOwnEntitiesByRole("worker").filter(Filters.not(Filters.byHasMetadata(PlayerID, "plan"))).length;
+	
+	if (workersNumber > 30 && (gameState.currentPhase() > 1 || gameState.isResearching("phase_town"))) {
+		if (gameState.countEntitiesAndQueuedByType(gameState.applyCiv(this.bModerate[0])) + queues.militaryBuilding.totalLength() < 1) {
+			debug ("Trying to build barracks");
 			queues.militaryBuilding.addItem(new BuildingConstructionPlan(gameState, this.bModerate[0]));
 		}
 	}
+	
+	if (gameState.countEntitiesAndQueuedByType(gameState.applyCiv(this.bModerate[0])) < 2 && workersNumber > 85)
+		if (queues.militaryBuilding.totalLength() < 1)
+			queues.militaryBuilding.addItem(new BuildingConstructionPlan(gameState, this.bModerate[0]));
+	
+	if (gameState.countEntitiesByType(gameState.applyCiv(this.bModerate[0])) === 2  && gameState.countEntitiesAndQueuedByType(gameState.applyCiv(this.bModerate[0])) < 3 && workersNumber > 125)
+		if (queues.militaryBuilding.totalLength() < 1)
+		{
+			queues.militaryBuilding.addItem(new BuildingConstructionPlan(gameState, this.bModerate[0]));
+			if (gameState.civ() == "gaul" || gameState.civ() == "brit" || gameState.civ() == "iber") {
+				queues.militaryBuilding.addItem(new BuildingConstructionPlan(gameState, this.bModerate[0]));
+				queues.militaryBuilding.addItem(new BuildingConstructionPlan(gameState, this.bModerate[0]));
+			}
+		}
 	//build advanced military buildings
-	if (gameState.getTimeElapsed() > 720*1000){
+	if (workersNumber >= 75 && gameState.currentPhase() > 2){
 		if (queues.militaryBuilding.totalLength() === 0){
 			var inConst = 0;
 			for (var i in this.bAdvanced)
 				inConst += gameState.countFoundationsWithType(gameState.applyCiv(this.bAdvanced[i]));
-			if (inConst == 0 && this.bAdvanced !== undefined) {
+			if (inConst == 0 && this.bAdvanced && this.bAdvanced.length !== 0) {
 				var i = Math.floor(Math.random() * this.bAdvanced.length);
 				if (gameState.countEntitiesAndQueuedByType(gameState.applyCiv(this.bAdvanced[i])) < 1){
 					queues.militaryBuilding.addItem(new BuildingConstructionPlan(gameState, this.bAdvanced[i]));
@@ -423,38 +475,59 @@ MilitaryAttackManager.prototype.constructTrainingBuildings = function(gameState,
 			}
 		}
 	}
+	if (gameState.civ() !== "gaul" && gameState.civ() !== "brit" && gameState.civ() !== "iber" &&
+		 workersNumber > 130 && gameState.currentPhase() > 2)
+	{
+		var Const = 0;
+		for (var i in this.bAdvanced)
+			Const += gameState.countEntitiesByType(gameState.applyCiv(this.bAdvanced[i]));
+		if (inConst == 1) {
+			var i = Math.floor(Math.random() * this.bAdvanced.length);
+			if (gameState.countEntitiesAndQueuedByType(gameState.applyCiv(this.bAdvanced[i])) < 1){
+				queues.militaryBuilding.addItem(new BuildingConstructionPlan(gameState, this.bAdvanced[i]));
+				queues.militaryBuilding.addItem(new BuildingConstructionPlan(gameState, this.bAdvanced[i]));
+			}
+		}
+	}
+
 	Engine.ProfileStop();
 };
 
-MilitaryAttackManager.prototype.trainMilitaryUnits = function(gameState, queues){
-	Engine.ProfileStart("Train Units");
-	// Continually try training new units, in batches of 5
-	if (queues.citizenSoldier.length() < 6) {
-		var newUnit = this.findBestNewUnit(gameState, queues.citizenSoldier, "citizenSoldier");
-		if (newUnit){
-			queues.citizenSoldier.addItem(new UnitTrainingPlan(gameState, newUnit, {
-				"role" : "soldier"
-			}, 5));
+// TODO: use pop()
+MilitaryAttackManager.prototype.garrisonAllFemales = function(gameState) {
+	var buildings = gameState.getOwnEntities().filter(Filters.byCanGarrison()).toEntityArray();
+	var females = gameState.getOwnEntities().filter(Filters.byClass("Support"));
+	
+	var cache = {};
+	
+	females.forEach( function (ent) {
+		for (i in buildings)
+		{
+			if (ent.position())
+			{
+				var struct = buildings[i];
+				if (!cache[struct.id()])
+					cache[struct.id()] = 0;
+				if (struct.garrisoned() && struct.garrisonMax() - struct.garrisoned().length - cache[struct.id()] > 0)
+				{
+					ent.garrison(struct);
+					cache[struct.id()]++;
+					break;
+				}
+			}
 		}
-	}
-	if (queues.advancedSoldier.length() < 2) {
-		var newUnit = this.findBestNewUnit(gameState, queues.advancedSoldier, "advanced");
-		if (newUnit){
-			queues.advancedSoldier.addItem(new UnitTrainingPlan(gameState, newUnit, {
-				"role" : "soldier"
-			}, 5));
-		}
-	}
-	if (queues.siege.length() < 4) {
-		var newUnit = this.findBestNewUnit(gameState, queues.siege, "siege");
-		if (newUnit){
-			queues.siege.addItem(new UnitTrainingPlan(gameState, newUnit, {
-				"role" : "soldier"
-			}, 2));
-		}
-	}
-	Engine.ProfileStop();
+	});
+	this.hasGarrisonedFemales = true;
 };
+MilitaryAttackManager.prototype.ungarrisonAll = function(gameState) {
+	this.hasGarrisonedFemales = false;
+	var buildings = gameState.getOwnEntities().filter(Filters.byCanGarrison()).toEntityArray();
+	buildings.forEach( function (struct) {
+		if (struct.garrisoned() && struct.garrisoned().length)
+				struct.unloadAll();
+	});
+};
+
 MilitaryAttackManager.prototype.pausePlan = function(gameState, planName) {
 	for (attackType in this.upcomingAttacks) {
 		for (i in this.upcomingAttacks[attackType]) {
@@ -496,20 +569,16 @@ MilitaryAttackManager.prototype.update = function(gameState, queues, events) {
 	
 	this.gameState = gameState;
 	
-	//this.registerSoldiers(gameState);
-	
-	//this.trainMilitaryUnits(gameState, queues);
-	
 	Engine.ProfileStart("Constructing military buildings and building defences");
 	this.constructTrainingBuildings(gameState, queues);
 	
-	if(gameState.getTimeElapsed() > 300*1000)
+	if(gameState.getTimeElapsed() > this.defenceBuildingTime)
 		this.buildDefences(gameState, queues);
 	Engine.ProfileStop();
 
-	Engine.ProfileStart("Updating enemy watchers");
-	this.enemyWatchers[ this.ennWatcherIndex[gameState.ai.playedTurn % this.ennWatcherIndex.length] ].detectArmies(gameState,this);
-	Engine.ProfileStop();
+	//Engine.ProfileStart("Updating enemy watchers");
+	//this.enemyWatchers[ this.ennWatcherIndex[gameState.ai.playedTurn % this.ennWatcherIndex.length] ].detectArmies(gameState,this);
+	//Engine.ProfileStop();
 
 	this.defenceManager.update(gameState, events, this);
 	
@@ -543,10 +612,10 @@ MilitaryAttackManager.prototype.update = function(gameState, queues, events) {
 	//if (gameState.defcon() >= 3) {
 	if (1) {
 		for (attackType in this.upcomingAttacks) {
-			for (var i = 0; i < this.upcomingAttacks[attackType].length; ++i) {
+			for (var i = 0;i < this.upcomingAttacks[attackType].length; ++i) {
 				
 				var attack = this.upcomingAttacks[attackType][i];
-				
+
 				// okay so we'll get the support plan
 				if (!attack.isStarted()) {
 					var updateStep = attack.updatePreparation(gameState, this,events);
@@ -558,19 +627,35 @@ MilitaryAttackManager.prototype.update = function(gameState, queues, events) {
 						debug ("Military Manager: " +attack.getType() +" plan " +attack.getName() +" aborted.");
 						if (updateStep === 3) {
 							this.attackPlansEncounteredWater = true;
-							debug("I dare not wet my feet");
+							debug("No attack path found. Aborting.");
 						}
 						attack.Abort(gameState, this);
 						//this.abortedAttacks.push(attack);
 						
 						this.upcomingAttacks[attackType].splice(i--,1);
 					} else if (updateStep === 2) {
+						var chatText = "I am launching an attack against " + gameState.sharedScript.playersData[attack.targetPlayer].name;
+						if (Math.random() < 0.2)
+							chatText = "Attacking " + gameState.sharedScript.playersData[attack.targetPlayer].name;
+						else if (Math.random() < 0.3)
+							chatText = "Starting to attack " + gameState.sharedScript.playersData[attack.targetPlayer].name;
+						else if (Math.random() < 0.3)
+							chatText = "I'm starting an attack against " + gameState.sharedScript.playersData[attack.targetPlayer].name;
+						gameState.ai.chatTeam(chatText);
 						debug ("Military Manager: Starting " +attack.getType() +" plan " +attack.getName());
 						attack.StartAttack(gameState,this);
 						this.startedAttacks[attackType].push(attack);
 						this.upcomingAttacks[attackType].splice(i--,1);
 					}
 				} else {
+					var chatText = "I am launching an attack against " + gameState.sharedScript.playersData[attack.targetPlayer].name;
+					if (Math.random() < 0.2)
+						chatText = "Attacking " + gameState.sharedScript.playersData[attack.targetPlayer].name;
+					else if (Math.random() < 0.3)
+						chatText = "Starting to attack " + gameState.sharedScript.playersData[attack.targetPlayer].name;
+					else if (Math.random() < 0.3)
+						chatText = "I'm starting an attack against " + gameState.sharedScript.playersData[attack.targetPlayer].name;
+					gameState.ai.chatTeam(chatText);
 					debug ("Military Manager: Starting " +attack.getType() +" plan " +attack.getName());
 					this.startedAttacks[attackType].push(attack);
 					this.upcomingAttacks[attackType].splice(i--,1);
@@ -581,37 +666,71 @@ MilitaryAttackManager.prototype.update = function(gameState, queues, events) {
 		//	this.abortedAttacks[gameState.ai.mainCounter % this.abortedAttacks.length].releaseAnyUnit(gameState);
 	}
 	for (attackType in this.startedAttacks) {
-		for (i in this.startedAttacks[attackType]) {
+		for (var i = 0; i < this.startedAttacks[attackType].length; ++i) {
 			var attack = this.startedAttacks[attackType][i];
 			// okay so then we'll update the raid.
-			var remaining = attack.update(gameState,this,events);
-			if (remaining == 0 || remaining == undefined) {
-				debug ("Military Manager: " +attack.getType() +" plan " +attack.getName() +" is now finished.");
-				attack.Abort(gameState);
+			if (!attack.isPaused())
+			{
+				var remaining = attack.update(gameState,this,events);
+				if (remaining == 0 || remaining == undefined) {
+					debug ("Military Manager: " +attack.getType() +" plan " +attack.getName() +" is now finished.");
+					attack.Abort(gameState);
 				
-				//this.abortedAttacks.push(attack);
-				this.startedAttacks[attackType].splice(i--,1);
+					//this.abortedAttacks.push(attack);
+					this.startedAttacks[attackType].splice(i--,1);
+				}
 			}
 		}
 	}
-	// creating plans after updating because an aborted plan might be reused in that case.
-	if (gameState.countEntitiesByType(gameState.applyCiv(this.bModerate[0])) >= 1 && !this.attackPlansEncounteredWater) {
-		if (this.upcomingAttacks["CityAttack"].length == 0 && gameState.getTimeElapsed() < 25*60000) {
-			var Lalala = new CityAttack(gameState, this,this.TotalAttackNumber, -1);
-			debug ("Military Manager: Creating the plan " +this.TotalAttackNumber);
-			this.TotalAttackNumber++;
-			this.upcomingAttacks["CityAttack"].push(Lalala);
-		} else if (this.upcomingAttacks["CityAttack"].length == 0) {
-			var Lalala = new CityAttack(gameState, this,this.TotalAttackNumber, -1, "superSized");
-			debug ("Military Manager: Creating the super sized plan " +this.TotalAttackNumber);
-			this.TotalAttackNumber++;
-			this.upcomingAttacks["CityAttack"].push(Lalala);
+	if (gameState.ai.strategy === "rush" && this.startedAttacks["CityAttack"].length !== 0) {
+		// and then we revert.
+		gameState.ai.strategy = "normal";
+		Config.Economy.femaleRatio = 0.4;
+		gameState.ai.modules.economy.targetNumWorkers = Math.max(Math.floor(gameState.getPopulationMax()*0.55), 1);
+	} else if (gameState.ai.strategy === "rush" && this.upcomingAttacks["CityAttack"].length === 0)
+	{
+		Lalala = new CityAttack(gameState, this,this.TotalAttackNumber, -1, "rush")
+		this.TotalAttackNumber++;
+		this.upcomingAttacks["CityAttack"].push(Lalala);
+		debug ("Starting a little something");
+	} else if (gameState.ai.strategy !== "rush")
+	{
+		// creating plans after updating because an aborted plan might be reused in that case.
+		if (gameState.countEntitiesByType(gameState.applyCiv(this.bModerate[0])) >= 1 && !this.attackPlansEncounteredWater
+			&& gameState.getTimeElapsed() > this.attackPlansStartTime) {
+			if (gameState.countEntitiesByType(gameState.applyCiv("structures/{civ}_dock")) === 0 && gameState.ai.waterMap)
+			{
+					// wait till we get a dock.
+			} else {
+				// basically only the first plan, really.
+				if (this.upcomingAttacks["CityAttack"].length == 0 && (gameState.getTimeElapsed() < 12*60000 || Config.difficulty < 1)) {
+					var Lalala = new CityAttack(gameState, this,this.TotalAttackNumber, -1);
+					if (Lalala.failed)
+					{
+						this.attackPlansEncounteredWater = true; // hack
+					} else {
+						debug ("Military Manager: Creating the plan " +this.TotalAttackNumber);
+						this.TotalAttackNumber++;
+						this.upcomingAttacks["CityAttack"].push(Lalala);
+					}
+				} else if (this.upcomingAttacks["CityAttack"].length == 0 && Config.difficulty !== 0) {
+					var Lalala = new CityAttack(gameState, this,this.TotalAttackNumber, -1, "superSized");
+					if (Lalala.failed)
+					{
+						this.attackPlansEncounteredWater = true; // hack
+					} else {
+						debug ("Military Manager: Creating the super sized plan " +this.TotalAttackNumber);
+						this.TotalAttackNumber++;
+						this.upcomingAttacks["CityAttack"].push(Lalala);
+					}
+				}
+			}
 		}
 	}
 	/*
 	 if (this.HarassRaiding && this.preparingRaidNumber + this.startedRaidNumber < 1 && gameState.getTimeElapsed() < 780000) {
 	 var Lalala = new CityAttack(gameState, this,this.totalStartedAttackNumber, -1, "harass_raid");
-	 if (!Lalala.createSupportPlans(gameState, this, queues.advancedSoldier)) {
+	 if (!Lalala.createSupportPlans(gameState, this, )) {
 	 debug ("Military Manager: harrassing plan not a valid option");
 	 this.HarassRaiding = false;
 	 } else {
@@ -632,7 +751,7 @@ MilitaryAttackManager.prototype.update = function(gameState, queues, events) {
 	// Set unassigned to be workers TODO: fix this so it doesn't scan all units every time
 	this.getUnassignedUnits(gameState).forEach(function(ent){
 		if (self.getSoldierType(ent) === "citizenSoldier"){
-			ent.setMetadata("role", "worker");
+			ent.setMetadata(PlayerID, "role", "worker");
 		}
 	});
 	Engine.ProfileStop();*/

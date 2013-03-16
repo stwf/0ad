@@ -34,6 +34,9 @@
 
 CSoundManager* g_SoundManager = NULL;
 
+#define		SOURCE_NUM		64
+
+#if CONFIG2_AUDIO
 
 class CSoundManagerWorker
 {
@@ -51,7 +54,9 @@ public:
 
 	~CSoundManagerWorker()
 	{
-
+		delete m_Items;
+		CleanupItems();
+		delete m_DeadItems;
 	}
 
 	/**
@@ -83,7 +88,6 @@ public:
 			ItemsList::iterator lstr = m_Items->begin();
 			while (lstr != m_Items->end())
 			{
-				(*lstr)->Stop();
 				delete *lstr;
 				lstr++;
 			}
@@ -115,20 +119,6 @@ public:
 		m_DeadItems->clear();
 	}
 
-	void DeleteItem(long itemNum)
-	{
-		CScopeLock lock(m_WorkerMutex);
-		AL_CHECK
-		ItemsList::iterator lstr = m_Items->begin();
-		lstr += itemNum;
-		
-		delete *lstr;
-		AL_CHECK
-		
-		m_Items->erase(lstr);
-	}
-
-
 private:
 	static void* RunThread(void* data)
 	{
@@ -146,6 +136,8 @@ private:
 		// Wait until the main thread wakes us up
 		while ( true )
 		{
+			g_Profiler2.RecordRegionLeave("semaphore wait");
+
 			// Handle shutdown requests as soon as possible
 			if (GetShutdown())
 				return;
@@ -155,6 +147,9 @@ private:
 				continue;
 
 			int pauseTime = 1000;
+			if ( g_SoundManager->InDistress() )
+				pauseTime = 50;
+
 			{
 				CScopeLock lock(m_WorkerMutex);
 		
@@ -164,10 +159,12 @@ private:
 
 				while (lstr != m_Items->end()) {
 
+					AL_CHECK
 					if ((*lstr)->IdleTask())
 					{
-						if ( (*lstr)->IsFading() )
+						if ( (pauseTime == 1000) && (*lstr)->IsFading() )
 							pauseTime = 100;
+
 						nextItemList->push_back(*lstr);
 					}
 					else
@@ -217,6 +214,7 @@ private:
 	bool m_Enabled;
 	bool m_Shutdown;
 };
+#endif
 
 void CSoundManager::ScriptingInit()
 {
@@ -229,7 +227,6 @@ void CSoundManager::ScriptingInit()
 
 #if CONFIG2_AUDIO
 
-#define		SOURCE_NUM		600
 
 void CSoundManager::CreateSoundManager()
 {
@@ -262,8 +259,10 @@ void CSoundManager::al_check(const char* caller, int line)
 
 CSoundManager::CSoundManager()
 {
-	m_CurrentEnvirons	= NULL;
-	m_CurrentTune		= NULL;
+	m_CurrentEnvirons	= 0;
+	m_ALSourceBuffer	= NULL;
+	m_CurrentTune		= 0;
+	m_SourceCOunt		= 0;
 	m_Gain				= 1;
 	m_MusicGain			= 1;
 	m_AmbientGain		= 1;
@@ -271,7 +270,11 @@ CSoundManager::CSoundManager()
 	m_BufferCount		= 50;
 	m_BufferSize		= 65536;
 	m_MusicEnabled		= true;
+	m_DistressTime	= 0;
+	m_DistressErrCount = 0;
+
 	m_Enabled			= AlcInit() == INFO::OK;
+	m_ItemsMap 			= new ItemsMap;
 	InitListener();
 
 	m_Worker = new CSoundManagerWorker();
@@ -283,18 +286,13 @@ CSoundManager::~CSoundManager()
 	if (m_Worker->Shutdown())
 		delete m_Worker;
 
+	delete m_ItemsMap;
+	
+	if ( m_ALSourceBuffer != NULL )
+		delete[] m_ALSourceBuffer;
+
 	alcDestroyContext(m_Context);
 	alcCloseDevice(m_Device);
-<<<<<<< HEAD
-
-	delete m_ALSourceBuffer;
-	delete m_StateBuffer;
-
-
-	m_CurrentEnvirons = 0;
-	m_CurrentTune = 0;
-=======
->>>>>>> upstream/master
 }
 
 
@@ -312,17 +310,27 @@ Status CSoundManager::AlcInit()
 		if(m_Context)
 		{
 			alcMakeContextCurrent(m_Context);
-			m_ALSourceBuffer = new( sizeof( ALuint ) * SOURCE_NUM );
-			m_StateBuffer = new( sizeof( ALSourceHolder ) * SOURCE_NUM );
-			sourceList = new( sizeof( ALuint ) * SOURCE_NUM );
+			m_ALSourceBuffer = new ALSourceHolder[SOURCE_NUM];
+			ALuint* sourceList = new ALuint[SOURCE_NUM];
 
 			alGenSources( SOURCE_NUM, sourceList);
+			ALCenum err = alcGetError(m_Device);
 
-			for ( x=0; x<SOURCE_NUM;x++)
+
+			if ( err == ALC_NO_ERROR )
 			{
-				m_ALSourceBuffer[x].ALSource = sourceList[x];
-				m_ALSourceBuffer[x].IsUsed = false;
+				for ( int x=0; x<SOURCE_NUM;x++)
+				{
+					m_ALSourceBuffer[x].ALSource 	= sourceList[x];
+					m_ALSourceBuffer[x].SourceItem 	= NULL;
+
+				}
 			}
+			else
+			{
+				LOGERROR(L"error in gensource = %d", err);
+			}
+			delete[] sourceList;
 		}
 	}
 
@@ -351,26 +359,67 @@ Status CSoundManager::AlcInit()
 	return ret;
 }
 
-ALuint CSoundManager::GetALSource()
+bool CSoundManager::InDistress()
 {
-	for ( x=0; x<SOURCE_NUM;x++)
+	CScopeLock lock(m_DistressMutex);
+
+	if ( m_DistressTime == 0 )
+		return false;
+	else if ( (timer_Time() - m_DistressTime) > 10 )
 	{
-		if ( !m_ALSourceBuffer[x].IsUsed )
+		m_DistressTime = 0;
+// Coming out of distress mode
+		m_DistressErrCount = 0;
+		return false;
+	}
+
+	return true;
+}
+
+void CSoundManager::SetDistressThroughShortage()
+{
+	CScopeLock lock(m_DistressMutex);
+
+// Going into distress for normal reasons
+	
+	m_DistressTime = timer_Time();
+}
+
+void CSoundManager::SetDistressThroughError()
+{
+	CScopeLock lock(m_DistressMutex);
+
+// Going into distress due to unknown error
+	
+	m_DistressTime = timer_Time();
+	m_DistressErrCount++;
+}
+
+
+
+ALuint CSoundManager::GetALSource( ISoundItem* anItem)
+{
+	for ( int x=0; x<SOURCE_NUM;x++)
+	{
+		if ( ! m_ALSourceBuffer[x].SourceItem )
 		{
-			m_ALSourceBuffer[x].IsUsed = true;
+			m_SourceCOunt++;
+			m_ALSourceBuffer[x].SourceItem = anItem;
 			return m_ALSourceBuffer[x].ALSource;
 		}
 	}
+	SetDistressThroughShortage();
 	return 0;
 }
 
 void CSoundManager::ReleaseALSource(ALuint theSource)
 {
-	for ( x=0; x<SOURCE_NUM;x++)
+	for ( int x=0; x<SOURCE_NUM;x++)
 	{
 		if ( m_ALSourceBuffer[x].ALSource == theSource )
 		{
-			m_ALSourceBuffer[x].IsUsed = false;
+			m_SourceCOunt--;
+			m_ALSourceBuffer[x].SourceItem = NULL;
 			return;
 		}
 	}
@@ -416,32 +465,15 @@ ISoundItem* CSoundManager::LoadItem(const VfsPath& itemPath)
 	AL_CHECK
 
 	CSoundData* itemData = CSoundData::SoundDataFromFile(itemPath);
-	ISoundItem* answer = ItemFromData(CSoundData* itemData);
 
 	AL_CHECK
-	
-	if (itemData != NULL)
-	{
-		if (itemData->IsOneShot())
-		{
-			if (itemData->GetBufferCount() == 1)
-				answer = new CSoundItem(itemData);
-			else
-				answer = new CBufferItem(itemData);
-		}
-		else
-		{
-			answer = new CStreamItem(itemData);
-		}
+	if ( itemData )
+		return CSoundManager::ItemForData( itemData );
 
-		if ( answer && m_Worker )
-			m_Worker->addItem( answer );
-	}
-
-	
-	return answer;
+	return NULL;
 }
-ISoundItem* CSoundManager::ItemFromData(CSoundData* itemData)
+
+ISoundItem* CSoundManager::ItemForData(CSoundData* itemData)
 {	
 	AL_CHECK
 	ISoundItem* answer = NULL;
@@ -475,17 +507,46 @@ void CSoundManager::IdleTask()
 	AL_CHECK
 	if (m_CurrentTune)
 		m_CurrentTune->EnsurePlay();
+	AL_CHECK
 	if (m_CurrentEnvirons)
 		m_CurrentEnvirons->EnsurePlay();
 	AL_CHECK
 	if (m_Worker)
 		m_Worker->CleanupItems();
+	AL_CHECK
 }
 
-void CSoundManager::DeleteItem(long itemNum)
+ISoundItem*	CSoundManager::ItemForEntity( entity_id_t source, CSoundData* sndData)
 {
-	if (m_Worker)
-		m_Worker->DeleteItem(itemNum);
+	ISoundItem*		currentItem = NULL;
+	if ( false ) 
+	{
+		ItemsMap::iterator		itemFound = m_ItemsMap->find( source );
+		if ( itemFound != m_ItemsMap->end() )
+		{
+			currentItem = itemFound->second;
+			if ( currentItem->CanAttach( sndData ) )
+			{
+				currentItem->Attach( sndData );
+				LOGERROR(L"did REUSE items source = %d", m_SourceCOunt);
+			}
+			else
+			{
+				m_ItemsMap->erase( itemFound );
+				currentItem->StopAndDelete();
+				LOGERROR(L"item UNREUSABLE for data = %d", m_SourceCOunt);
+				currentItem = NULL;
+			}
+		}
+	}
+	if ( currentItem == NULL )
+	{
+		currentItem = ItemForData( sndData );
+		if ( currentItem )
+			m_ItemsMap->insert(std::make_pair( source, currentItem));		
+	}
+
+	return currentItem;
 }
 
 
@@ -514,13 +575,13 @@ void CSoundManager::PlayActionItem(ISoundItem* anItem)
 		}
 	}
 }
-void CSoundManager::PlayGroupItem(ISoundItem* anItem, ALfloat groupGain)
+void CSoundManager::PlayGroupItem(ISoundItem* anItem, ALfloat groupGain )
 {
 	if (anItem)
 	{
 		if (m_Enabled && (m_ActionGain > 0)) {
 			anItem->SetGain(m_ActionGain * groupGain);
-			anItem->Play();
+			anItem->PlayAndDelete();
 			AL_CHECK
 		}
 	}
@@ -552,6 +613,7 @@ void CSoundManager::SetMusicItem(ISoundItem* anItem)
 		if (m_MusicEnabled && m_Enabled)
 		{
 			m_CurrentTune = anItem;
+			m_CurrentTune->SetIsManaged( true );
 			m_CurrentTune->SetGain(0);
 			m_CurrentTune->PlayLoop();
 			m_CurrentTune->FadeToIn( m_MusicGain, 1.00);
@@ -578,6 +640,7 @@ void CSoundManager::SetAmbientItem(ISoundItem* anItem)
 		if (m_Enabled && (m_AmbientGain > 0))
 		{
 			m_CurrentEnvirons = anItem;
+			m_CurrentEnvirons->SetIsManaged( true );
 			m_CurrentEnvirons->SetGain(0);
 			m_CurrentEnvirons->PlayLoop();
 			m_CurrentEnvirons->FadeToIn( m_AmbientGain, 2.00);

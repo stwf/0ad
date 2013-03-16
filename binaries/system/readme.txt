@@ -9,6 +9,7 @@ Basic gameplay:
 Autostart:
 -autostart=NAME					map NAME for scenario, or rms name for random map
 -autostart-ai=PLAYER:AI			adds named AI to the given PLAYER (e.g. 2:testbot)
+-autostart-aidiff=PLAYER:level	changes the difficulty setting for AI PLAYER (0: easy, 3: very hard)
 Multiplayer:
 -autostart-playername=NAME		multiplayer local player NAME (default 'anonymous')
 -autostart-host					multiplayer host mode
@@ -20,6 +21,7 @@ Random maps only:
 -autostart-random=SEED			random map with SEED value (default 0, use -1 for random)
 -autostart-size=TILES			random map SIZE in tiles (default 192)
 -autostart-players=NUMBER		NUMBER of players on random map
+-autostart-civ=PLAYER:CIV		changes the civilisation of player PLAYER to CIV (default athen)
 
 Configuration:
 -conf=KEY:VALUE		set a config value

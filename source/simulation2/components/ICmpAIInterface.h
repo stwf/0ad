@@ -28,6 +28,11 @@ public:
 	 * to be passed to AI scripts.
 	 */
 	virtual CScriptVal GetRepresentation() = 0;
+	/**
+	 * Returns a script object that represents the current world state,
+	 * to be passed to AI scripts. No caching for initialization
+	 */
+	virtual CScriptVal GetFullRepresentation() = 0;
 
 	DECLARE_INTERFACE_TYPE(AIInterface)
 };

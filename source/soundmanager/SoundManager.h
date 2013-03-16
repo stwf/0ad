@@ -24,6 +24,10 @@
 
 #include "lib/file/vfs/vfs_path.h"
 #include "soundmanager/items/ISoundItem.h"
+#include "simulation2/system/Entity.h"
+#include "soundmanager/data/SoundData.h"
+#include "soundmanager/items/ISoundItem.h"
+#include "ps/Profiler2.h"
 
 #include <vector>
 #include <map>
@@ -31,6 +35,7 @@
 #define AL_CHECK CSoundManager::al_check(__func__, __LINE__);
 
 typedef std::vector<ISoundItem*> ItemsList;
+typedef std::map<entity_id_t, ISoundItem*> ItemsMap;
 
 class CSoundManagerWorker;
 
@@ -38,8 +43,8 @@ class CSoundManagerWorker;
 struct ALSourceHolder
 {
 	/// Title of the column
-	ALuint 	ALSource;
-	bool	IsUsed;
+	ALuint 		ALSource;
+	ISoundItem*	SourceItem;
 };
 
 class CSoundManager
@@ -52,15 +57,22 @@ protected:
 	ISoundItem* m_CurrentTune;
 	ISoundItem* m_CurrentEnvirons;
 	CSoundManagerWorker* m_Worker;
+	ItemsMap* m_ItemsMap;
+	CMutex m_DistressMutex;
+
 	float m_Gain;
 	float m_MusicGain;
 	float m_AmbientGain;
 	float m_ActionGain;
 	bool m_Enabled;
+	long m_SourceCOunt;
 	long m_BufferSize;
 	int m_BufferCount;
 	bool m_MusicEnabled;
 	bool m_SoundEnabled;
+
+	long m_DistressErrCount;
+	long m_DistressTime;
 
 	ALSourceHolder* m_ALSourceBuffer;
 
@@ -69,6 +81,8 @@ public:
 	virtual ~CSoundManager();
 
 	ISoundItem* LoadItem(const VfsPath& itemPath);
+	ISoundItem* ItemForData(CSoundData* itemData);
+	ISoundItem* ItemForEntity( entity_id_t source, CSoundData* sndData);
 
 	static void ScriptingInit();
 	static void CreateSoundManager();
@@ -80,7 +94,7 @@ public:
 	void SetMusicEnabled (bool isEnabled);
 	void setSoundEnabled( bool enabled );
 
-	ALuint GetALSource();
+	ALuint GetALSource(ISoundItem* anItem);
 	void ReleaseALSource(ALuint theSource);
 	ISoundItem* ItemFromData(CSoundData* itemData);
 
@@ -90,7 +104,6 @@ public:
 	ISoundItem* GetSoundItem(unsigned long itemRow);
 	unsigned long Count();
 	void IdleTask();
-	void DeleteItem(long itemNum);
 	
 	void SetMemoryUsage(long bufferSize, int bufferCount);
 	long GetBufferCount();
@@ -105,7 +118,10 @@ public:
 	void SetMusicGain(float gain);
 	void SetAmbientGain(float gain);
 	void SetActionGain(float gain);
-	
+	bool InDistress();
+	void SetDistressThroughShortage();
+	void SetDistressThroughError();
+
 protected:
 	void InitListener();
 	virtual Status AlcInit();
