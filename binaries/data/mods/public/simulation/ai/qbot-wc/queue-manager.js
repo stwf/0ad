@@ -1,182 +1,84 @@
-//This takes the input queues and picks which items to fund with resources until no more resources are left to distribute.
+// This takes the input queues and picks which items to fund with resources until no more resources are left to distribute.
 //
-//In this manager all resources are 'flattened' into a single type=(food+wood+metal+stone+pop*50 (see resources.js))
-//the following refers to this simple as resource
+// Currently this manager keeps accounts for each queue, split between the 4 main resources
 //
-// Each queue has an account which records the amount of resource it can spend.  If no queue has an affordable item
-// then the amount of resource is increased to all accounts in direct proportion to the priority until an item on one
-// of the queues becomes affordable.
+// Each time resources are available (ie not in any account), it is split between the different queues
+// Mostly based on priority of the queue, and existing needs.
+// Each turn, the queue Manager checks if a queue can afford its next item, then it does.
 //
-// A consequence of the system is that a rarely used queue will end up with a very large account.  I am unsure if this
-// is good or bad or neither.
+// A consequence of the system it's not really revertible. Once a queue has an account of 500 food, it'll keep it
+// If for some reason the AI stops getting new food, and this queue lacks, say, wood, no other queues will
+// be able to benefit form the 500 food (even if they only needed food).
+// This is not to annoying as long as all goes well. If the AI loses many workers, it starts being problematic.
 //
-// Each queue object has two queues in it, one with items waiting for resources and the other with items which have been 
-// allocated resources and are due to be executed.  The secondary queues are helpful because then units can be trained
-// in groups of 5 and buildings are built once per turn to avoid placement clashes.
+// It also has the effect of making the AI more or less always sit on a few hundreds resources since most queues
+// get some part of the total, and if all queues have 70% of their needs, nothing gets done
+// Particularly noticeable when phasing: the AI often overshoots by a good 200/300 resources before starting.
+//
+// The fact that there is an outqueue is mostly a relic of qBot.
+//
+// This system should be improved. It's probably not flexible enough.
 
 var QueueManager = function(queues, priorities) {
 	this.queues = queues;
 	this.priorities = priorities;
 	this.account = {};
+	this.accounts = {};
+
+	// the sorting would need to be updated on priority change but there is currently none.
+	var self = this;
+	this.queueArrays = [];
 	for (var p in this.queues) {
 		this.account[p] = 0;
+		this.accounts[p] = new Resources();
+		this.queueArrays.push([p,this.queues[p]]);
 	}
+	this.queueArrays.sort(function (a,b) { return (self.priorities[b[0]] - self.priorities[a[0]]) });
+
 	this.curItemQueue = [];
+	
 };
 
-QueueManager.prototype.getAvailableResources = function(gameState) {
+QueueManager.prototype.getAvailableResources = function(gameState, noAccounts) {
 	var resources = gameState.getResources();
+	if (noAccounts)
+		return resources;
 	for (var key in this.queues) {
-		resources.subtract(this.queues[key].outQueueCost());
+		resources.subtract(this.accounts[key]);
 	}
 	return resources;
 };
 
-QueueManager.prototype.futureNeeds = function(gameState, onlyNeeds) {
-	// Work out which plans will be executed next using priority and return the total cost of these plans
-	var recurse = function(queues, qm, number, depth){
-		var needs = new Resources();
-		var totalPriority = 0;
-		for (var i = 0; i < queues.length; i++){
-			totalPriority += qm.priorities[queues[i]];
+QueueManager.prototype.futureNeeds = function(gameState, EcoManager) {
+	var needs = new Resources();
+	// get ouy current resources, not removing accounts.
+	var current = this.getAvailableResources(gameState, true);
+	//queueArrays because it's faster.
+	for (i in this.queueArrays)
+	{
+		var name = this.queueArrays[i][0];
+		var queue = this.queueArrays[i][1];
+		for (var j = 0; j < Math.min(2,queue.length()); ++j)
+		{
+			needs.add(queue.queue[j].getCost());
 		}
-		for (var i = 0; i < queues.length; i++){
-			var num = Math.round(((qm.priorities[queues[i]]/totalPriority) * number));
-			if (num < qm.queues[queues[i]].countQueuedUnits()){
-				var cnt = 0;
-				for ( var j = 0; cnt < num; j++) {
-					cnt += qm.queues[queues[i]].queue[j].number;
-					needs.add(qm.queues[queues[i]].queue[j].getCost());
-					number -= qm.queues[queues[i]].queue[j].number;
-				}
-			}else{
-				for ( var j = 0; j < qm.queues[queues[i]].length(); j++) {
-					needs.add(qm.queues[queues[i]].queue[j].getCost());
-					number -= qm.queues[queues[i]].queue[j].number;
-				}
-				queues.splice(i, 1);
-				i--;
-			}
-		}
-		// Check that more items were selected this call and that there are plans left to be allocated
-		// Also there is a fail-safe max depth 
-		if (queues.length > 0 && number > 0 && depth < 20){
-			needs.add(recurse(queues, qm, number, depth + 1));
-		}
-		return needs;
-	};
-	
-	//number of plans to look at
-	var current = this.getAvailableResources(gameState);
-	
-	var futureNum = 20;
-	var queues = [];
-	for (var q in this.queues){
-		queues.push(q);
 	}
-	var needs = recurse(queues, this, futureNum, 0);
-	
-	if (onlyNeeds) {
+	if (EcoManager === false) {
 		return {
 			"food" : Math.max(needs.food - current.food, 0),
-			"wood" : Math.max(needs.wood + 15*needs.population - current.wood, 0),
+			"wood" : Math.max(needs.wood - current.wood, 0),
 			"stone" : Math.max(needs.stone - current.stone, 0),
 			"metal" : Math.max(needs.metal - current.metal, 0)
-		};
-	} else if (gameState.getTimeElapsed() > 300*1000) {
-		// Return predicted values minus the current stockpiles along with a base rater for all resources
-		return {
-			"food" : Math.max(needs.food - current.food, 0) + 150,
-			"wood" : Math.max(needs.wood + 15*needs.population - current.wood, 0) + 150, //TODO: read the house cost in case it changes in the future
-			"stone" : Math.max(needs.stone - current.stone, 0) + 50,
-			"metal" : Math.max(needs.metal - current.metal, 0) + 100
 		};
 	} else {
+		// Return predicted values minus the current stockpiles along with a base rater for all resources
 		return {
-			"food" : Math.max(needs.food - current.food, 0) + 150,
-			"wood" : Math.max(needs.wood + 15*needs.population - current.wood, 0) + 150, //TODO: read the house cost in case it changes in the future
-			"stone" : Math.max(needs.stone - current.stone, 0),
-			"metal" : Math.max(needs.metal - current.metal, 0)
+			"food" : (Math.max(needs.food - current.food, 0) + EcoManager.baseNeed["food"])/2,
+			"wood" : (Math.max(needs.wood - current.wood, 0) + EcoManager.baseNeed["wood"])/2,
+			"stone" : (Math.max(needs.stone - current.stone, 0) + EcoManager.baseNeed["stone"])/2,
+			"metal" : (Math.max(needs.metal - current.metal, 0) + EcoManager.baseNeed["metal"])/2
 		};
 	}
-};
-
-// runs through the curItemQueue and allocates resources be sending the
-// affordable plans to the Out Queues. Returns a list of the unneeded resources
-// so they can be used by lower priority plans.
-QueueManager.prototype.affordableToOutQueue = function(gameState) {
-	var availableRes = this.getAvailableResources(gameState);
-	if (this.curItemQueue.length === 0) {
-		return availableRes;
-	}
-
-	var resources = this.getAvailableResources(gameState);
-
-	// Check everything in the curItemQueue, if it is affordable then mark it
-	// for execution
-	for ( var i = 0; i < this.curItemQueue.length; i++) {
-		availableRes.subtract(this.queues[this.curItemQueue[i]].getNext().getCost());
-		if (resources.canAfford(this.queues[this.curItemQueue[i]].getNext().getCost())) {
-			this.account[this.curItemQueue[i]] -= this.queues[this.curItemQueue[i]].getNext().getCost().toInt();
-			this.queues[this.curItemQueue[i]].nextToOutQueue();
-			resources = this.getAvailableResources(gameState);
-			this.curItemQueue[i] = null;
-		}
-	}
-
-	// Clear the spent items
-	var tmpQueue = [];
-	for ( var i = 0; i < this.curItemQueue.length; i++) {
-		if (this.curItemQueue[i] !== null) {
-			tmpQueue.push(this.curItemQueue[i]);
-		}
-	}
-	this.curItemQueue = tmpQueue;
-	
-	return availableRes;
-};
-
-QueueManager.prototype.onlyUsesSpareAndUpdateSpare = function(unitCost, spare){
-	// This allows plans to be given resources if there are >500 spare after all the 
-	// higher priority plan queues have been looked at and there are still enough resources
-	// We make it >0 so that even if we have no stone available we can still have non stone
-	// plans being given resources.
-	var spareNonNegRes = {
-		food: Math.max(0, spare.food - 500),
-		wood: Math.max(0, spare.wood - 500),
-		stone: Math.max(0, spare.stone - 500),
-		metal: Math.max(0, spare.metal - 500)
-	};
-	var spareNonNeg = new Resources(spareNonNegRes);
-	var ret = false;
-	if (spareNonNeg.canAfford(unitCost)){
-		ret = true;
-	}
-	
-	// If there are no negative resources then there weren't any higher priority items so we 
-	// definitely want to say that this can be added to the list.
-	var tmp = true;
-	for (key in spare.types){
-		var type = spare.types[key];
-		if (spare[type] < 0){
-			tmp = false;
-		}
-	}
-	// If either to the above sections returns true then 
-	ret = ret || tmp;
-	
-	spare.subtract(unitCost); // take the resources of the current unit from spare since this
-	                          // must be higher priority than any which are looked at 
-	                          // afterwards.
-	
-	return ret;
-};
-
-String.prototype.rpad = function(padString, length) {
-	var str = this;
-    while (str.length < length)
-        str = str + padString;
-    return str;
 };
 
 QueueManager.prototype.printQueues = function(gameState){
@@ -184,13 +86,13 @@ QueueManager.prototype.printQueues = function(gameState){
 	for (var i in this.queues){
 		var qStr = "";
 		var q = this.queues[i];
+		if (q.outQueue.length > 0)
+			debug((i + ":"));
 		for (var j in q.outQueue){
-			qStr += q.outQueue[j].type + " ";
+			qStr = "	" + q.outQueue[j].type + " ";
 			if (q.outQueue[j].number)
 				qStr += "x" + q.outQueue[j].number;
-		}
-		if (qStr != ""){
-			debug((i + ":").rpad(" ", 20) + qStr);
+			debug (qStr);
 		}
 	}
 	
@@ -198,21 +100,33 @@ QueueManager.prototype.printQueues = function(gameState){
 	for (var i in this.queues){
 		var qStr = "";
 		var q = this.queues[i];
+		if (q.queue.length > 0)
+			debug((i + ":"));
 		for (var j in q.queue){
-			qStr += q.queue[j].type + " ";
+			qStr = "     " + q.queue[j].type + " ";
 			if (q.queue[j].number)
 				qStr += "x" + q.queue[j].number;
-			qStr += "    ";
-		}
-		if (qStr != ""){
-			debug((i + ":").rpad(" ", 20) + qStr);
+			debug (qStr);
 		}
 	}
-	debug("Accounts: " + uneval(this.account));
-	debug("Needed Resources:" + uneval(this.futureNeeds(gameState)));
+	debug ("Accounts");
+	for (p in this.accounts)
+	{
+		debug(p + ": " + uneval(this.accounts[p]));
+	}
+	debug("Needed Resources:" + uneval(this.futureNeeds(gameState,false)));
+	debug ("Current Resources:" + uneval(gameState.getResources()));
+	debug ("Available Resources:" + uneval(this.getAvailableResources(gameState)));
+};
+
+QueueManager.prototype.clear = function(){
+	this.curItemQueue = [];
+	for (i in this.queues)
+		this.queues[i].empty();
 };
 
 QueueManager.prototype.update = function(gameState) {
+	var self = this;
 	
 	for (var i in this.priorities){
 		if (!(this.priorities[i] > 0)){
@@ -222,98 +136,117 @@ QueueManager.prototype.update = function(gameState) {
 	}
 	
 	Engine.ProfileStart("Queue Manager");
-	//this.printQueues(gameState);
+	
+	//if (gameState.ai.playedTurn % 10 === 0)
+	//	this.printQueues(gameState);
 	
 	Engine.ProfileStart("Pick items from queues");
-	// See if there is a high priority item from last time.
-	this.affordableToOutQueue(gameState);
-	do {
-		// pick out all affordable items, and list the ratios of (needed
-		// cost)/priority for unaffordable items.
-		var ratio = {};
-		var ratioMin = 1000000;
-		var ratioMinQueue = undefined;
-		for (var p in this.queues) {
-			if (this.queues[p].length() > 0 && this.curItemQueue.indexOf(p) === -1) {
-				var cost = this.queues[p].getNext().getCost().toInt();
-				if (cost < this.account[p]) {
-					this.curItemQueue.push(p);
-					// break;
-				} else {
-					ratio[p] = (cost - this.account[p]) / this.priorities[p];
-					if (ratio[p] < ratioMin) {
-						ratioMin = ratio[p];
-						ratioMinQueue = p;
-					}
-				}
+	
+	// TODO: this only pushes the first object. SHould probably try to push any possible object to maximize productivity. Perhaps a settinh?
+	// looking at queues in decreasing priorities and pushing to the current item queues.
+	for (var i in this.queueArrays)
+	{
+		var name = this.queueArrays[i][0];
+		var queue = this.queueArrays[i][1];
+		if (queue.length() > 0)
+		{
+			var item = queue.getNext();
+			var total = new Resources();
+			total.add(this.accounts[name]);
+			total.subtract(queue.outQueueCost());
+			if (total.canAfford(item.getCost()))
+			{
+				queue.nextToOutQueue();
 			}
+		} else if (queue.totalLength() === 0) {
+			this.accounts[name].reset();
 		}
-
-		// Checks to see that there is an item in at least one queue, otherwise
-		// breaks the loop.
-		if (this.curItemQueue.length === 0 && ratioMinQueue === undefined) {
-			break;
-		}
-
-		var availableRes = this.affordableToOutQueue(gameState);
-		
-		var allSpare = availableRes["food"] > 0 && availableRes["wood"] > 0 && availableRes["stone"] > 0 && availableRes["metal"] > 0;
-		// if there are no affordable items use any resources which aren't
-		// wanted by a higher priority item
-		if ((availableRes["food"] > 0 || availableRes["wood"] > 0 || availableRes["stone"] > 0 || availableRes["metal"] > 0)
-				&& ratioMinQueue !== undefined) {
-			while (Object.keys(ratio).length > 0 && (availableRes["food"] > 0 || availableRes["wood"] > 0 || availableRes["stone"] > 0 || availableRes["metal"] > 0)){
-				ratioMin = Math.min(); //biggest value
-				for (var key in ratio){
-					if (ratio[key] < ratioMin){
-						ratioMin = ratio[key];
-						ratioMinQueue = key;
-					}
-				}
-				if (this.onlyUsesSpareAndUpdateSpare(this.queues[ratioMinQueue].getNext().getCost(), availableRes)){
-					if (allSpare){
-						for (var p in this.queues) {
-							this.account[p] += ratioMin * this.priorities[p];
+	}
+	
+	var availableRes = this.getAvailableResources(gameState);
+	// assign some accounts to queues. This is done by priority, and by need.
+	for (ress in availableRes)
+	{
+		if (availableRes[ress] > 0 && ress != "population")
+		{
+			var totalPriority = 0;
+			var tempPrio = {};
+			var maxNeed = {};
+			// Okay so this is where it gets complicated.
+			// If a queue requires "ress" for the next elements (in the queue or the outqueue)
+			// And the account is not high enough for it.
+			// Then we add it to the total priority.
+			// To try and be clever, we don't want a long queue to hog all resources. So two things:
+			//	-if a queue has enough of resource X for the 1st element, its priority is decreased (/2).
+			//	-queues accounts are capped at "resources for the first + 80% of the next"
+			// This avoids getting a high priority queue with many elements hogging all of one resource
+			// uselessly while it awaits for other resources.
+			for (j in this.queues) {
+				var outQueueCost = this.queues[j].outQueueCost();
+				var queueCost = this.queues[j].queueCost();
+				if (this.accounts[j][ress] < queueCost[ress] + outQueueCost[ress])
+				{
+					// adding us to the list of queues that need an update.
+					tempPrio[j] = this.priorities[j];
+					maxNeed[j] = outQueueCost[ress] + this.queues[j].getNext().getCost()[ress];
+					// if we have enough of that resource for the outqueue and our first resource in the queue, diminish our priority.
+					if (this.accounts[j][ress] >= outQueueCost[ress] + this.queues[j].getNext().getCost()[ress])
+					{
+						tempPrio[j] /= 2;
+						if (this.queues[j].length() !== 1)
+						{
+							var halfcost = this.queues[j].queue[1].getCost()[ress]*0.8;
+							maxNeed[j] += halfcost;
+							if (this.accounts[j][ress] >= outQueueCost[ress] + this.queues[j].getNext().getCost()[ress] + halfcost)
+								delete tempPrio[j];
 						}
 					}
-					//this.account[ratioMinQueue] -= this.queues[ratioMinQueue].getNext().getCost().toInt();
-					this.curItemQueue.push(ratioMinQueue);
-					allSpare = availableRes["food"] > 0 && availableRes["wood"] > 0 && availableRes["stone"] > 0 && availableRes["metal"] > 0;
+					if (tempPrio[j])
+						totalPriority += tempPrio[j];
 				}
-				delete ratio[ratioMinQueue];
 			}
-			
+			// Now we allow resources to the accounts. We can at most allow "TempPriority/totalpriority*available"
+			// But we'll sometimes allow less if that would overflow.
+			for (j in tempPrio) {
+				// we'll add at much what can be allowed to this queue.
+				var toAdd = Math.floor(tempPrio[j]/totalPriority * availableRes[ress]);
+				// let's check we're not adding too much.
+				var maxAdd = Math.min(maxNeed[j] - this.accounts[j][ress], toAdd);
+				this.accounts[j][ress] += maxAdd;
+			}
 		}
-		this.affordableToOutQueue(gameState);
-	} while (this.curItemQueue.length === 0);
+	}
 	Engine.ProfileStop();
 
 	Engine.ProfileStart("Execute items");
 	
+	var units_Techs_passed = 0;
 	// Handle output queues by executing items where possible
-	for (var p in this.queues) {
-		while (this.queues[p].outQueueLength() > 0) {
-			var next = this.queues[p].outQueueNext();
-			if (next.category === "building") {
-				if (gameState.buildingsBuilt == 0) {
-					if (this.queues[p].outQueueNext().canExecute(gameState)) {
-						this.queues[p].executeNext(gameState);
-						gameState.buildingsBuilt += 1;
-						
-					} else {
-						break;
-					}
-				} else {
-					break;
-				}
-			} else {
-				if (this.queues[p].outQueueNext().canExecute(gameState)){
-					this.queues[p].executeNext(gameState);
-				}else{
-					break;
+	for (var p in this.queueArrays) {
+		var name = this.queueArrays[p][0];
+		var queue = this.queueArrays[p][1];
+		var next = queue.outQueueNext();
+		if (!next)
+			continue;
+		if (next.category === "building") {
+			if (gameState.buildingsBuilt == 0) {
+				if (next.canExecute(gameState)) {
+					this.accounts[name].subtract(next.getCost())
+					//debug ("Starting " + next.type + " substracted " + uneval(next.getCost()))
+					queue.executeNext(gameState);
+					gameState.buildingsBuilt += 1;
 				}
 			}
+		} else {
+			if (units_Techs_passed < 2 && queue.outQueueNext().canExecute(gameState)){
+				//debug ("Starting " + next.type + " substracted " + uneval(next.getCost()))
+				this.accounts[name].subtract(next.getCost())
+				queue.executeNext(gameState);
+				units_Techs_passed++;
+			}
 		}
+		if (units_Techs_passed >= 2)
+			continue;
 	}
 	Engine.ProfileStop();
 	Engine.ProfileStop();
@@ -324,6 +257,13 @@ QueueManager.prototype.addQueue = function(queueName, priority) {
 		this.queues[queueName] = new Queue();
 		this.priorities[queueName] = priority;
 		this.account[queueName] = 0;
+		this.accounts[queueName] = new Resources();
+
+		var self = this;
+		this.queueArrays = [];
+		for (var p in this.queues)
+			this.queueArrays.push([p,this.queues[p]]);
+		this.queueArrays.sort(function (a,b) { return (self.priorities[b[0]] - self.priorities[a[0]]) });
 	}
 }
 QueueManager.prototype.removeQueue = function(queueName) {
@@ -334,6 +274,23 @@ QueueManager.prototype.removeQueue = function(queueName) {
 		delete this.queues[queueName];
 		delete this.priorities[queueName];
 		delete this.account[queueName];
+		delete this.accounts[queueName];
+		
+		var self = this;
+		this.queueArrays = [];
+		for (var p in this.queues)
+			this.queueArrays.push([p,this.queues[p]]);
+		this.queueArrays.sort(function (a,b) { return (self.priorities[b[0]] - self.priorities[a[0]]) });
 	}
+}
+QueueManager.prototype.changePriority = function(queueName, newPriority) {
+	var self = this;
+	if (this.queues[queueName] !== undefined)
+		this.priorities[queueName] = newPriority;
+	this.queueArrays = [];
+	for (var p in this.queues) {
+		this.queueArrays.push([p,this.queues[p]]);
+	}
+	this.queueArrays.sort(function (a,b) { return (self.priorities[b[0]] - self.priorities[a[0]]) });
 }
 

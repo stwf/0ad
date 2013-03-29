@@ -1,4 +1,4 @@
-var UnitTrainingPlan = function(gameState, type, metadata, number) {
+var UnitTrainingPlan = function(gameState, type, metadata, number, maxMerge) {
 	this.type = gameState.applyCiv(type);
 	this.metadata = metadata;
 
@@ -15,6 +15,10 @@ var UnitTrainingPlan = function(gameState, type, metadata, number) {
 	}else{
 		this.number = number;
 	}
+	if (!maxMerge)
+		this.maxMerge = 5;
+	else
+		this.maxMerge = maxMerge;
 };
 
 UnitTrainingPlan.prototype.canExecute = function(gameState) {
@@ -38,17 +42,13 @@ UnitTrainingPlan.prototype.execute = function(gameState) {
 	// plans that have already been executed this turn)
 	if (trainers.length > 0){
 		trainers.sort(function(a, b) {
-			
-			if (self.metadata["plan"] !== undefined) {
-				var aa = a.trainingQueueTime();
-				var bb = b.trainingQueueTime();
-				if (a.hasClass("Civic"))
-					aa += 20;
-				if (b.hasClass("Civic"))
-					bb += 20;
-				return (a.trainingQueueTime() - b.trainingQueueTime());
-			}
-			return a.trainingQueueTime() - b.trainingQueueTime();
+			var aa = a.trainingQueueTime();
+			var bb = b.trainingQueueTime();
+			if (a.hasClass("Civic") && !self.template.hasClass("Support"))
+				aa += 0.9;
+			if (b.hasClass("Civic") && !self.template.hasClass("Support"))
+				bb += 0.9;
+			return (aa - bb);
 		});
 	
 		trainers[0].train(this.type, this.number, this.metadata);
@@ -62,6 +62,8 @@ UnitTrainingPlan.prototype.getCost = function(){
 	return multCost;
 };
 
-UnitTrainingPlan.prototype.addItem = function(){
-	this.number += 1;
+UnitTrainingPlan.prototype.addItem = function(amount){
+	if (amount === undefined)
+		amount = 1;
+	this.number += amount;
 };

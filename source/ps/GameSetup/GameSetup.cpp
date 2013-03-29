@@ -84,6 +84,7 @@
 #include "renderer/ModelRenderer.h"
 #include "scripting/ScriptingHost.h"
 #include "scripting/ScriptGlue.h"
+#include "scriptinterface/DebuggingServer.h"
 #include "scriptinterface/ScriptInterface.h"
 #include "scriptinterface/ScriptStats.h"
 #include "simulation2/Simulation2.h"
@@ -692,6 +693,7 @@ void Shutdown(int UNUSED(flags))
 
 	TIMER_BEGIN(L"shutdown ScriptingHost");
 	delete &g_ScriptingHost;
+	delete g_DebuggingServer;
 	TIMER_END(L"shutdown ScriptingHost");
 
 	TIMER_BEGIN(L"shutdown ConfigDB");
@@ -886,10 +888,16 @@ void Init(const CmdLineArgs& args, int UNUSED(flags))
 	CSoundManager::CreateSoundManager();
 #endif
 
-	InitScripting();	// before GUI
-
 	// g_ConfigDB, command line args, globals
 	CONFIG_Init(args);
+	
+	// before scripting 
+	if (g_JSDebuggerEnabled)
+		g_DebuggingServer = new CDebuggingServer();
+
+	InitScripting();	// before GUI
+	
+	g_ConfigDB.RegisterJSConfigDB(); 	// after scripting 
 
 	// Optionally start profiler HTTP output automatically
 	// (By default it's only enabled by a hotkey, for security/performance)
@@ -1185,6 +1193,47 @@ bool Autostart(const CmdLineArgs& args)
 			CStr name = aiArgs[i].AfterFirst(":");
 
 			scriptInterface.SetProperty(player.get(), "AI", std::string(name));
+			scriptInterface.SetProperty(player.get(), "AIDiff", 1);
+			scriptInterface.SetPropertyInt(playerData.get(), playerID-1, player);
+		}
+	}
+	// Set AI difficulty
+	if (args.Has("autostart-aidiff"))
+	{
+		std::vector<CStr> civArgs = args.GetMultiple("autostart-aidiff");
+		for (size_t i = 0; i < civArgs.size(); ++i)
+		{
+			// Instead of overwriting existing player data, modify the array
+			CScriptVal player;
+			if (!scriptInterface.GetPropertyInt(playerData.get(), i, player) || player.undefined())
+			{
+				scriptInterface.Eval("({})", player);
+			}
+			
+			int playerID = civArgs[i].BeforeFirst(":").ToInt();
+			int difficulty = civArgs[i].AfterFirst(":").ToInt();
+			
+			scriptInterface.SetProperty(player.get(), "AIDiff", difficulty);
+			scriptInterface.SetPropertyInt(playerData.get(), playerID-1, player);
+		}
+	}
+	// Set player data for Civs
+	if (args.Has("autostart-civ"))
+	{
+		std::vector<CStr> civArgs = args.GetMultiple("autostart-civ");
+		for (size_t i = 0; i < civArgs.size(); ++i)
+		{
+			// Instead of overwriting existing player data, modify the array
+			CScriptVal player;
+			if (!scriptInterface.GetPropertyInt(playerData.get(), i, player) || player.undefined())
+			{
+				scriptInterface.Eval("({})", player);
+			}
+			
+			int playerID = civArgs[i].BeforeFirst(":").ToInt();
+			CStr name = civArgs[i].AfterFirst(":");
+			
+			scriptInterface.SetProperty(player.get(), "Civ", std::string(name));
 			scriptInterface.SetPropertyInt(playerData.get(), playerID-1, player);
 		}
 	}

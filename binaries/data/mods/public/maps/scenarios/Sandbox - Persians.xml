@@ -11,7 +11,7 @@
 		<Fog>
 			<FogFactor>0.00199219</FogFactor>
 			<FogThickness>0.273438</FogThickness>
-			<FogColour r="0.913725" g="0.831373" b="0.658824"/>
+			<FogColour r="0.909804" g="0.831373" b="0.658824"/>
 		</Fog>
 		<Water>
 			<WaterBody>
@@ -31,11 +31,11 @@
 			<Contrast>1.00879</Contrast>
 			<Saturation>0.900391</Saturation>
 			<Bloom>0.155859</Bloom>
-			<PostEffect>hdr</PostEffect>
+			<PostEffect>default</PostEffect>
 		</Postproc>
 	</Environment>
 	<Camera>
-		<Position x="675.919" y="112.308" z="596.201"/>
+		<Position x="647.7" y="91.2143" z="543.067"/>
 		<Rotation angle="0"/>
 		<Declination angle="0.610865"/>
 	</Camera>
@@ -3629,7 +3629,7 @@
 		<Entity uid="613">
 			<Template>gaia/flora_tree_cretan_date_palm_tall</Template>
 			<Player>0</Player>
-			<Position x="576.97803" z="660.07569"/>
+			<Position x="578.81336" z="711.0699"/>
 			<Orientation y="0.37066"/>
 		</Entity>
 		<Entity uid="614">
@@ -3677,7 +3677,7 @@
 		<Entity uid="621">
 			<Template>gaia/flora_tree_cretan_date_palm_tall</Template>
 			<Player>0</Player>
-			<Position x="606.96302" z="648.07032"/>
+			<Position x="610.3683" z="611.61133"/>
 			<Orientation y="-2.30675"/>
 		</Entity>
 		<Entity uid="622">
@@ -7044,121 +7044,121 @@
 		<Entity uid="1326">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="636.40394" z="661.0896"/>
+			<Position x="628.66083" z="645.19855"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1327">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="638.81415" z="663.99946"/>
+			<Position x="631.07105" z="648.1084"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1328">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="640.8523" z="666.8935"/>
+			<Position x="633.1092" z="651.00245"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1329">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="642.40278" z="669.08112"/>
+			<Position x="634.65967" z="653.19007"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1330">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="644.17713" z="670.89844"/>
+			<Position x="636.43403" z="655.0074"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1331">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="639.26197" z="656.68201"/>
+			<Position x="631.51886" z="640.79096"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1332">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="641.76215" z="660.50043"/>
+			<Position x="634.01905" z="644.60938"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1333">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="644.0456" z="663.0876"/>
+			<Position x="636.3025" z="647.19654"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1334">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="645.82941" z="665.68635"/>
+			<Position x="638.08631" z="649.7953"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1335">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="647.3282" z="667.99726"/>
+			<Position x="639.58509" z="652.10621"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1336">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="643.21381" z="653.3954"/>
+			<Position x="635.47071" z="637.50434"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1337">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="645.2588" z="656.0268"/>
+			<Position x="637.5157" z="640.13575"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1338">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="647.48816" z="659.45954"/>
+			<Position x="639.74506" z="643.56849"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1339">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="649.37452" z="662.18378"/>
+			<Position x="641.63141" z="646.29273"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1340">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="650.94721" z="664.37421"/>
+			<Position x="643.20411" z="648.48316"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1341">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="647.8412" z="650.72376"/>
+			<Position x="640.09809" z="634.83271"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1342">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="649.7616" z="654.26001"/>
+			<Position x="642.0185" z="638.36896"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1343">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="651.81562" z="656.84693"/>
+			<Position x="644.07251" z="640.95588"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1344">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="653.31226" z="659.97785"/>
+			<Position x="645.56916" z="644.0868"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1345">
 			<Template>units/pers_infantry_spearman_b</Template>
 			<Player>1</Player>
-			<Position x="655.5287" z="663.36121"/>
+			<Position x="647.78559" z="647.47016"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1346">
@@ -7657,12 +7657,6 @@
 			<Template>structures/pers_sb2</Template>
 			<Player>1</Player>
 			<Position x="708.21326" z="668.34449"/>
-			<Orientation y="2.35621"/>
-		</Entity>
-		<Entity uid="1528">
-			<Template>structures/pers_gardens</Template>
-			<Player>1</Player>
-			<Position x="596.54108" z="709.92212"/>
 			<Orientation y="2.35621"/>
 		</Entity>
 		<Entity uid="1529">
@@ -8516,6 +8510,13 @@
 			<Player>0</Player>
 			<Position x="416.00388" z="985.89454"/>
 			<Orientation y="-1.80636"/>
+		</Entity>
+		<Entity uid="1671">
+			<Template>structures/pers_wonder</Template>
+			<Player>1</Player>
+			<Position x="599.0409" z="665.0702"/>
+			<Orientation y="2.35621"/>
+			<Actor seed="40808"/>
 		</Entity>
 	</Entities>
 	<Paths/>

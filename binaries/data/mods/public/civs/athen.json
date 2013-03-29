@@ -6,7 +6,8 @@
 	"History":"As the cradle of Western civilization and the birthplace of democracy, Athens was famed as a center for the arts, learning and philosophy. The Athenians were also powerful warriors, particularly at sea. At its peak, Athens dominated a large part of the Hellenic world for several decades.",
 	"Music":[
 			{"File":"Harvest_Festival.ogg", "Type":"peace"},
-			{"File":"Forging_a_City-State.ogg", "Type":"peace"}
+			{"File":"Forging_a_City-State.ogg", "Type":"peace"},
+			{"File":"The_Hellespont.ogg", "Type":"peace"}
 		],
 	"Factions":
 	[
@@ -119,7 +120,11 @@
 		},
 		{
 			"Template": "units/athen_infantry_spearman_b",
-			"Count": 4
+			"Count": 2
+		},
+		{
+			"Template": "units/athen_infantry_slinger_b",
+			"Count": 2
 		},
 		{
 			"Template": "units/athen_cavalry_javelinist_b"

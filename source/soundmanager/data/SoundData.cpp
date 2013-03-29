@@ -35,8 +35,11 @@ CSoundData::CSoundData()
 
 CSoundData::~CSoundData()
 {
+//	LOGERROR(L"Sound data deleted %ls\n", m_FileName->c_str() );
+
 	if (m_ALBuffer != 0)
 		alDeleteBuffers(1, &m_ALBuffer);
+
 	delete m_FileName;
 }
 
@@ -114,7 +117,7 @@ CSoundData* CSoundData::SoundDataFromOgg(const VfsPath& itemPath)
 	return answer;
 }
 
-ALsizei CSoundData::GetBufferCount()
+int CSoundData::GetBufferCount()
 {
 	return 1;
 }
@@ -144,12 +147,12 @@ bool CSoundData::DecrementCount()
 	return (m_RetentionCount <= 0);
 }
 
-ALuint CSoundData::GetBuffer()
+unsigned int CSoundData::GetBuffer()
 {
 	return m_ALBuffer;
 }
 
-ALuint* CSoundData::GetBufferPtr()
+unsigned int* CSoundData::GetBufferPtr()
 {
 	return &m_ALBuffer;
 }

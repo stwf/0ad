@@ -514,7 +514,7 @@
 
 	    <!-- Displays Alpha name and number -->
 	    <object size="70%-128 0 70%+128 100%" name="alphaLabel" type="text" style="CenteredLabelText" text_valign="top" ghost="true">
-		ALPHA XII : Loucetios<!-- IMPORTANT: remember to update pregame/mainmenu.xml in sync with this -->
+		ALPHA XIII : Magadha<!-- IMPORTANT: remember to update pregame/mainmenu.xml in sync with this -->
 
 		<!-- Displays build date and revision number-->
 		<object size="50%-128 0 50%+128 100%-2" name="buildTimeLabel" type="text" style="BuildNameText" ghost="true">
@@ -1008,7 +1008,7 @@
 			<repeat count="16">
 			    <object name="unitResearchButton[n]" hidden="true" style="iconButton" type="button" size="0 0 46 46" tooltip_style="sessionToolTipBottom">
 				<object name="unitResearchIcon[n]" type="image" ghost="true" size="3 3 43 43"/>
-				<object name="unitResearchSelection[n]" hidden="true" type="image" ghost="true" size="3 3 43 43" sprite="colour: 255 0 0 127"/>
+				<object name="unitResearchUnchosenIcon[n]" type="image" hidden="true" ghost="true" size="3 3 43 43" sprite="stretched:session/icons/tech_pair_would_be_unavailable.png"/>
 				<object name="unitResearchUnaffordable[n]" hidden="true" type="image" ghost="true" size="3 3 43 43" sprite="colour: 255 0 0 60"/>
 			    </object>
 			</repeat>
@@ -1028,6 +1028,7 @@
 			    <object name="unitTrainingButton[n]" hidden="true" style="iconButton" type="button" size="0 0 46 46" tooltip_style="sessionToolTipBottom">
 				<object name="unitTrainingIcon[n]" type="image" ghost="true" size="3 3 43 43"/>
 				<object name="unitTrainingUnaffordable[n]" hidden="true" type="image" ghost="true" size="3 3 43 43" sprite="colour: 255 0 0 127"/>
+				<object name="unitTrainingCount[n]" ghost="true" style="groupIconsText" type="text" z="20"/>
 			    </object>
 			</repeat>
 		    </object>
@@ -1112,7 +1113,6 @@
 		style="StoneButton"
 		size="50%-84 50%+128 50%+84 50%+160"
 		tooltip_style="sessionToolTip"
-		hidden="true"
 	>
 	    <object size="0 0 100% 100%" type="text" style="CenteredButtonText" name="disconnectedExitButtonText" ghost="true">Return to Main Menu</object>
 	    <action on="Press">leaveGame()</action>
