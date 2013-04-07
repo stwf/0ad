@@ -6,6 +6,9 @@ var g_Players = [];
 // Cache the useful civ data
 var g_CivData = {};
 
+var g_GameSpeeds = {};
+var g_CurrentSpeed;
+
 var g_PlayerAssignments = { "local": { "name": "You", "player": 1 } };
 
 // Cache dev-mode settings that are frequently or widely used
@@ -85,9 +88,9 @@ function init(initData, hotloadData)
 		g_Players = getPlayerData(g_PlayerAssignments);
 
 		if (initData.savedGUIData)
-		{
 			restoreSavedGameData(initData.savedGUIData);
-		}
+
+		getGUIObjectByName("gameSpeedButton").hidden = g_IsNetworked;
 	}
 	else // Needed for autostart loading option
 	{
@@ -97,6 +100,15 @@ function init(initData, hotloadData)
 	// Cache civ data
 	g_CivData = loadCivData();
 	g_CivData["gaia"] = { "Code": "gaia", "Name": "Gaia" };
+
+	g_GameSpeeds = initGameSpeeds();
+	g_CurrentSpeed = Engine.GetSimRate();
+	var gameSpeed = getGUIObjectByName("gameSpeed");
+	gameSpeed.list = g_GameSpeeds.names;
+	gameSpeed.list_data = g_GameSpeeds.speeds;
+	var idx = g_GameSpeeds.speeds.indexOf(g_CurrentSpeed);
+	gameSpeed.selected = idx != -1 ? idx : g_GameSpeeds["default"];
+	gameSpeed.onSelectionChange = function() { changeGameSpeed(+this.list_data[this.selected]); }
 
 	getGUIObjectByName("civIcon").sprite = "stretched:" + g_CivData[g_Players[Engine.GetPlayerID()].civ].Emblem;
 	getGUIObjectByName("civIcon").tooltip = g_CivData[g_Players[Engine.GetPlayerID()].civ].Name;
@@ -353,6 +365,16 @@ function checkPlayerState()
 	}
 }
 
+function changeGameSpeed(speed)
+{
+	// For non-networked games only
+	if (!g_IsNetworked)
+	{
+		Engine.SetSimRate(speed);
+		g_CurrentSpeed = speed;
+	}
+}
+
 /**
  * Recomputes GUI state that depends on simulation state or selection state. Called directly every simulation
  * update (see session.xml), or from onTick when the selection has changed.
@@ -375,6 +397,7 @@ function onSimulationUpdate()
 	if (g_ShowAllStatusBars)
 		recalculateStatusBarDisplay();
 
+	updateHero(simState);
 	updateGroups();
 	updateDebug(simState);
 	updatePlayerDisplay(simState);
@@ -388,6 +411,41 @@ function onSimulationUpdate()
 	if (battleState)
 		global.music.setState(global.music.states[battleState]);
 }
+
+function updateHero(simState)
+{
+	var playerState = simState.players[Engine.GetPlayerID()];
+	var heroButton = getGUIObjectByName("unitHeroButton");
+
+	if (!playerState || playerState.heroes.length <= 0)
+	{
+		heroButton.hidden = true;
+		return;
+	}
+
+	var heroImage = getGUIObjectByName("unitHeroImage");
+	var heroState = Engine.GuiInterfaceCall("GetEntityState", playerState.heroes[0]);
+	var template = GetTemplateData(heroState.template);
+	heroImage.sprite = "stretched:session/portraits/" + template.icon;
+
+	heroButton.onpress = (function(e) { return function() { if (!Engine.HotkeyIsPressed("selection.add")) g_Selection.reset(); g_Selection.addList([e]); } })(playerState.heroes[0]);
+	heroButton.ondoublepress = (function(e) { return function() { selectAndMoveTo(e) }; })(playerState.heroes[0]);
+	heroButton.hidden = false;
+
+	// Setup tooltip
+	var tooltip = "[font=\"serif-bold-16\"]" + template.name.specific + "[/font]";
+	tooltip += "\n[font=\"serif-bold-13\"]Health:[/font] " + heroState.hitpoints + "/" + heroState.maxHitpoints;
+	tooltip += "\n[font=\"serif-bold-13\"]" + (heroState.attack ? heroState.attack.type + " " : type)
+	           + "Attack:[/font] " + damageTypeDetails(heroState.attack);
+	// Show max attack range if ranged attack, also convert to tiles (4m per tile)
+	if (heroState.attack && heroState.attack.type == "Ranged")
+		tooltip += ", [font=\"serif-bold-13\"]Range:[/font] " + Math.round(heroState.attack.maxRange/4);
+
+	tooltip += "\n[font=\"serif-bold-13\"]Armor:[/font] " + damageTypeDetails(heroState.armour);
+	tooltip += "\n" + template.tooltip;
+
+	heroButton.tooltip = tooltip;
+};
 
 function updateGroups()
 {
@@ -526,8 +584,9 @@ function updateResearchDisplay()
 
 function updateTimeElapsedCounter(simState)
 {
+	var speed = g_CurrentSpeed != 1.0 ? " (" + g_CurrentSpeed + "x)" : "";
 	var timeElapsedCounter = getGUIObjectByName("timeElapsedCounter");
-	timeElapsedCounter.caption = timeToString(simState.timeElapsed);
+	timeElapsedCounter.caption = timeToString(simState.timeElapsed) + speed;
 }
 
 // Toggles the display of status bars for all of the player's entities.
